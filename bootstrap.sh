@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPO_URL="https://github.com/sajjadriaj/nix-dev-setup.git"
+INSTALL_DIR="${DEV_SETUP_DIR:-$HOME/.local/share/nix-dev-setup}"
+
 printf '\n🛠️  Bootstrapping Developer Workstation\n'
 printf '========================================\n\n'
 
@@ -12,7 +15,6 @@ fi
 # shellcheck disable=SC1091
 source /etc/os-release
 
-# This bootstrap targets Debian and Debian-derived distributions that use apt.
 if ! command -v apt-get >/dev/null 2>&1; then
   echo "This bootstrap requires a Debian-based Linux distribution with apt-get."
   exit 1
@@ -29,7 +31,12 @@ if [[ "$(uname -m)" != "x86_64" ]]; then
   exit 1
 fi
 
-echo "→ Installing base system dependencies..."
+if ! command -v sudo >/dev/null 2>&1; then
+  echo "sudo is required. Install/configure sudo for your user and rerun this script."
+  exit 1
+fi
+
+echo "→ Installing bootstrap dependencies..."
 sudo apt-get update
 sudo apt-get install -y \
   curl \
@@ -39,6 +46,34 @@ sudo apt-get install -y \
   build-essential \
   xz-utils \
   git
+
+# When invoked through curl | bash there is no local checkout containing
+# flake.nix/home.nix, so create/update a persistent checkout automatically.
+SCRIPT_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
+if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/flake.nix" && -f "$SCRIPT_DIR/home.nix" ]]; then
+  SETUP_DIR="$SCRIPT_DIR"
+  echo "✓ Using existing checkout: $SETUP_DIR"
+else
+  echo "→ Preparing dev-setup checkout at $INSTALL_DIR..."
+  mkdir -p "$(dirname "$INSTALL_DIR")"
+
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    git -C "$INSTALL_DIR" fetch --prune origin
+    git -C "$INSTALL_DIR" pull --ff-only
+  elif [[ -e "$INSTALL_DIR" ]]; then
+    echo "Cannot clone into $INSTALL_DIR because it exists and is not a Git checkout."
+    echo "Set DEV_SETUP_DIR to another path or remove the existing path."
+    exit 1
+  else
+    git clone "$REPO_URL" "$INSTALL_DIR"
+  fi
+
+  SETUP_DIR="$INSTALL_DIR"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "→ Installing Docker Engine from the distribution repositories..."
@@ -69,16 +104,23 @@ if [[ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 fi
 
+if ! command -v nix >/dev/null 2>&1; then
+  echo "Nix was installed but is not available in this shell."
+  echo "Open a new shell and rerun: $SETUP_DIR/bootstrap.sh"
+  exit 1
+fi
+
 mkdir -p "$HOME/.config/nix"
 if [[ -f "$HOME/.config/nix/nix.conf" ]]; then
-  if ! grep -q '^experimental-features = .*nix-command.*flakes' "$HOME/.config/nix/nix.conf"; then
+  if ! grep -Eq '^experimental-features[[:space:]]*=.*nix-command.*flakes' "$HOME/.config/nix/nix.conf"; then
     printf '\nexperimental-features = nix-command flakes\n' >> "$HOME/.config/nix/nix.conf"
   fi
 else
   printf 'experimental-features = nix-command flakes\n' > "$HOME/.config/nix/nix.conf"
 fi
 
-echo "→ Applying Home Manager configuration..."
+echo "→ Applying Home Manager configuration from $SETUP_DIR..."
+cd "$SETUP_DIR"
 nix run github:nix-community/home-manager -- \
   switch \
   --flake ".#$USER"
@@ -86,6 +128,7 @@ nix run github:nix-community/home-manager -- \
 printf '\n========================================\n'
 printf '🛠️  Developer workstation ready\n'
 printf '========================================\n\n'
+printf 'Configuration checkout: %s\n\n' "$SETUP_DIR"
 printf 'Installed/configured:\n'
 printf '  ✓ Nix + Home Manager\n'
 printf '  ✓ Docker\n'
