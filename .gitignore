@@ -1,0 +1,19 @@
+# Local/editor state
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# direnv
+.direnv/
+.envrc.local
+
+# Local secrets / environment overrides
+.env
+.env.*
+!.env.example
+
+# Nix build output
+result
+result-*
