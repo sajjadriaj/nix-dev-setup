@@ -12,14 +12,17 @@ fi
 # shellcheck disable=SC1091
 source /etc/os-release
 
-case "${ID:-}" in
-  ubuntu|pop)
-    ;;
-  *)
-    echo "This bootstrap currently supports Ubuntu and Pop!_OS."
-    exit 1
-    ;;
-esac
+# This bootstrap targets Debian and Debian-derived distributions that use apt.
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "This bootstrap requires a Debian-based Linux distribution with apt-get."
+  exit 1
+fi
+
+if [[ "${ID:-}" != "debian" && "${ID_LIKE:-}" != *debian* ]]; then
+  echo "This system does not identify itself as Debian or Debian-derived."
+  echo "Detected: ID=${ID:-unknown} ID_LIKE=${ID_LIKE:-unknown}"
+  exit 1
+fi
 
 if [[ "$(uname -m)" != "x86_64" ]]; then
   echo "This setup currently targets x86_64 Linux."
@@ -38,7 +41,7 @@ sudo apt-get install -y \
   git
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "→ Installing Docker Engine..."
+  echo "→ Installing Docker Engine from the distribution repositories..."
   sudo apt-get install -y docker.io
   sudo systemctl enable --now docker
 else
