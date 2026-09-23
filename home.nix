@@ -73,6 +73,15 @@
     vegeta
   ];
 
+  # AI coding agents
+  programs.claude-code.enable = true;
+
+  programs.pi-coding-agent = {
+    enable = true;
+    # Keep Pi's settings/auth mutable and managed by Pi itself.
+    # Authenticate after installation with: pi -> /login
+  };
+
   programs.git = {
     enable = true;
     settings = {
